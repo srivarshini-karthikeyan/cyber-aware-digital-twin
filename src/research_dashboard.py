@@ -32,7 +32,7 @@ from .genai_engine import LSTMAutoencoder
 from .streaming_processor import StreamingProcessor, RealTimeDetector
 from .ensemble_detector import EnsembleAnomalyDetector
 from .validation_metrics import ValidationMetrics
-from .adaptive_threshold import AdaptiveThreshold, BehavioralDriftDetector
+from .adaptive_threshold import AdaptiveThreshold
 from .explainability_engine import ExplainabilityEngine
 from .defensive_support import DefensiveDecisionSupport
 from .physics_coupled_twin import PhysicsCoupledDigitalTwin
@@ -53,6 +53,14 @@ class ResearchGradeDashboard:
         with open(config_path, 'r') as f:
             self.config = yaml.safe_load(f)
         
+        adaptive_cfg = self.config.get("adaptive_threshold", {})
+
+        base_threshold = adaptive_cfg.get("base_threshold", 0.15)
+        target_fpr = adaptive_cfg.get("target_fpr", 0.05)
+        target_fnr = adaptive_cfg.get("target_fnr", 0.15)
+        adaptation_rate = adaptive_cfg.get("adaptation_rate", 0.1)
+
+
         # Core components
         self.data_processor = SWaTDataProcessor(config_path)
         self.digital_twin = CyberAwareDigitalTwin(config_path)
@@ -62,8 +70,13 @@ class ResearchGradeDashboard:
         self.streaming_processor = StreamingProcessor(config_path)
         self.ensemble_detector = EnsembleAnomalyDetector(config_path)
         self.validation_metrics = ValidationMetrics()
-        self.adaptive_threshold = AdaptiveThreshold(config_path)
-        self.drift_detector = BehavioralDriftDetector()
+        self.adaptive_threshold = AdaptiveThreshold(
+            base_threshold=base_threshold,
+            target_fpr=target_fpr,
+            target_fnr=target_fnr,
+            adaptation_rate=adaptation_rate
+        )
+        #self.drift_detector = BehavioralDriftDetector()
         self.explainability = ExplainabilityEngine(config_path)
         self.defensive_support = DefensiveDecisionSupport(config_path)
         self.physics_twin = PhysicsCoupledDigitalTwin(config_path)
@@ -135,15 +148,25 @@ class ResearchGradeDashboard:
         is_anomaly = ensemble_pred['anomaly_flags'][-1] if len(ensemble_pred['anomaly_flags']) > 0 else False
         confidence = ensemble_pred['confidence_scores'][-1] if len(ensemble_pred['confidence_scores']) > 0 else 0.0
         
-        # Update adaptive threshold
-        if hasattr(self.genai, 'compute_reconstruction_error'):
-            try:
-                errors = self.genai.compute_reconstruction_error(sequences)
-                avg_error = np.mean(errors)
-                self.adaptive_threshold.update(avg_error, is_anomaly, timestamp)
-            except:
-                pass
+        # # Update adaptive threshold
+        # if hasattr(self.genai, 'compute_reconstruction_error'):
+        #     try:
+        #         errors = self.genai.compute_reconstruction_error(sequences)
+        #         avg_error = np.mean(errors)
+        #         self.adaptive_threshold.update(avg_error, is_anomaly, timestamp)
+        #     except:
+        #         pass
         
+        # ===============================
+        # Adaptive Threshold Update
+        # ===============================
+        if ground_truth is not None:
+            self.adaptive_threshold.update_performance(
+                predicted=is_anomaly,
+                ground_truth=ground_truth
+            )
+            self.adaptive_threshold.adapt_threshold()
+
         # Update ground truth metrics
         if ground_truth is not None:
             self.validation_metrics.add_detection(

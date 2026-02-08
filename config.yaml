@@ -130,3 +130,11 @@ dashboard:
   host: "127.0.0.1"
   debug: false
   auto_reload: true
+
+
+# Adaptive Threshold Configuration
+adaptive_threshold:
+  base_threshold: 0.15
+  target_fpr: 0.05
+  target_fnr: 0.15
+  adaptation_rate: 0.1

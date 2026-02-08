@@ -18,10 +18,10 @@
   },
   "phase1_metrics": {
     "false_positive_rate": 0.34146341463414637,
-    "false_alarm_rate_per_hour": 1169.1660738324226,
+    "false_alarm_rate_per_hour": 1081.869592210966,
     "normal_samples_flagged": 14,
     "total_normal_samples": 41,
-    "threshold_value": 0.8353466887728402
+    "threshold_value": 0.8378043673028619
   },
   "overall_metrics": {
     "accuracy": 0.741,

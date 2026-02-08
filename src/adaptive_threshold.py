@@ -1,248 +1,256 @@
 """
-Adaptive Threshold Learning System
+Adaptive Thresholding System
+Elite Enhancement for Production IDS
 
-Automatically adjusts anomaly thresholds based on evolving data patterns
+Dynamically adjusts detection threshold based on:
+- Recent false positive/negative rates
+- System operational context
+- Time-based patterns
 """
 
 import numpy as np
-import pandas as pd
-from typing import Dict, List, Optional, Tuple
-from collections import deque
-import yaml
+from typing import Dict, List, Optional
 from dataclasses import dataclass
+from datetime import datetime, time
+import json
 
 
 @dataclass
-class ThresholdState:
-    """Current threshold state"""
-    value: float
-    adaptation_rate: float
-    confidence: float
-    last_update: float
+class ThresholdMetrics:
+    """Metrics for threshold adaptation"""
+    false_positive_rate: float
+    false_negative_rate: float
+    true_positive_rate: float
+    true_negative_rate: float
+    sample_count: int
+    timestamp: float
 
 
 class AdaptiveThreshold:
     """
-    Adaptive threshold that learns from data evolution
+    Adaptive threshold system that adjusts based on performance
     """
     
-    def __init__(self, config_path: str = "config.yaml", 
-                 initial_threshold: float = 0.15,
-                 adaptation_rate: float = 0.1):
-        """Initialize adaptive threshold"""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
-        
-        self.initial_threshold = initial_threshold
-        self.adaptation_rate = adaptation_rate
-        
-        # Current threshold state
-        self.current_threshold = initial_threshold
-        self.threshold_history: List[float] = [initial_threshold]
-        
-        # Error history for adaptation
-        self.error_history: deque = deque(maxlen=1000)
-        self.reconstruction_errors: deque = deque(maxlen=1000)
-        
-        # Drift detection
-        self.drift_detected = False
-        self.drift_magnitude = 0.0
-        
-        # Adaptation parameters
-        self.min_threshold = 0.05
-        self.max_threshold = 0.5
-        self.adaptation_window = 100  # Samples
-        
-    def update(self, reconstruction_error: float, is_anomaly: bool,
-              timestamp: float):
+    def __init__(self,
+                 base_threshold: float,
+                 target_fpr: float = 0.05,  # 5% target FPR
+                 target_fnr: float = 0.15,  # 15% target FNR
+                 adaptation_rate: float = 0.1,
+                 min_threshold: Optional[float] = None,
+                 max_threshold: Optional[float] = None,
+                 history_window: int = 100):
         """
-        Update threshold based on new error observation
+        Initialize adaptive threshold
         
         Args:
-            reconstruction_error: Current reconstruction error
-            is_anomaly: Whether this was classified as anomaly
-            timestamp: Current timestamp
+            base_threshold: Initial threshold (from Phase 1 calibration)
+            target_fpr: Target false positive rate
+            target_fnr: Target false negative rate
+            adaptation_rate: How quickly to adapt (0.1 = 10% adjustment per cycle)
+            min_threshold: Minimum allowed threshold (80% of base)
+            max_threshold: Maximum allowed threshold (120% of base)
+            history_window: Number of recent samples to consider
         """
-        self.reconstruction_errors.append(reconstruction_error)
-        self.error_history.append({
-            'error': reconstruction_error,
-            'is_anomaly': is_anomaly,
-            'timestamp': timestamp
-        })
+        # Ensure numeric types
+        base_threshold = float(base_threshold)
+
+        self.base_threshold = base_threshold
+        self.current_threshold = base_threshold
+        self.target_fpr = float(target_fpr)
+        self.target_fnr = float(target_fnr)
+        self.adaptation_rate = float(adaptation_rate)
+
+        # Clamp bounds
+        self.min_threshold = float(min_threshold) if min_threshold is not None else (base_threshold * 0.8)
+        self.max_threshold = float(max_threshold) if max_threshold is not None else (base_threshold * 1.2)
+
         
-        # Check for drift
-        self._detect_drift()
+        # Performance history
+        self.history_window = history_window
+        self.recent_predictions: List[bool] = []
+        self.recent_ground_truth: List[bool] = []
+        self.metrics_history: List[ThresholdMetrics] = []
         
-        # Adapt threshold
-        self._adapt_threshold()
-        
-        # Record threshold
-        self.threshold_history.append(self.current_threshold)
+        # Context tracking
+        self.operational_context = "normal"  # normal, maintenance, startup, shutdown
+        self.drift_detected = False
+
     
-    def _detect_drift(self):
-        """Detect behavioral drift in data"""
-        if len(self.reconstruction_errors) < self.adaptation_window:
-            return
+    def update_performance(self, predicted: bool, ground_truth: bool):
+        """
+        Update performance metrics with new prediction
         
-        # Compare recent errors to historical baseline
-        recent_errors = list(self.reconstruction_errors)[-self.adaptation_window:]
-        baseline_errors = list(self.reconstruction_errors)[:self.adaptation_window]
+        Args:
+            predicted: System prediction (True = anomaly)
+            ground_truth: Actual ground truth (True = attack)
+        """
+        self.recent_predictions.append(predicted)
+        self.recent_ground_truth.append(ground_truth)
         
-        recent_mean = np.mean(recent_errors)
-        baseline_mean = np.mean(baseline_errors)
-        
-        # Drift detection: significant shift in mean
-        drift_magnitude = abs(recent_mean - baseline_mean) / (baseline_mean + 1e-10)
-        
-        if drift_magnitude > 0.2:  # 20% shift
-            self.drift_detected = True
-            self.drift_magnitude = drift_magnitude
-        else:
-            self.drift_detected = False
-            self.drift_magnitude = 0.0
+        # Keep only recent history
+        if len(self.recent_predictions) > self.history_window:
+            self.recent_predictions = self.recent_predictions[-self.history_window:]
+            self.recent_ground_truth = self.recent_ground_truth[-self.history_window:]
     
-    def _adapt_threshold(self):
-        """Adapt threshold based on error distribution"""
-        if len(self.reconstruction_errors) < 50:
-            return  # Need enough data
+    def compute_recent_metrics(self) -> ThresholdMetrics:
+        """Compute metrics from recent predictions"""
+        if len(self.recent_predictions) == 0:
+            return ThresholdMetrics(
+                false_positive_rate=0.0,
+                false_negative_rate=0.0,
+                true_positive_rate=0.0,
+                true_negative_rate=0.0,
+                sample_count=0,
+                timestamp=datetime.now().timestamp()
+            )
         
-        # Compute percentile-based threshold
-        errors = np.array(list(self.reconstruction_errors))
+        y_pred = np.array(self.recent_predictions)
+        y_true = np.array(self.recent_ground_truth)
         
-        # Use 95th percentile as adaptive threshold
-        percentile_threshold = np.percentile(errors, 95)
+        # Compute confusion matrix
+        tp = np.sum((y_pred == True) & (y_true == True))
+        tn = np.sum((y_pred == False) & (y_true == False))
+        fp = np.sum((y_pred == True) & (y_true == False))
+        fn = np.sum((y_pred == False) & (y_true == True))
         
-        # Smooth adaptation
-        self.current_threshold = (
-            (1 - self.adaptation_rate) * self.current_threshold +
-            self.adaptation_rate * percentile_threshold
+        # Compute rates
+        fpr = fp / (fp + tn) if (fp + tn) > 0 else 0.0
+        fnr = fn / (fn + tp) if (fn + tp) > 0 else 0.0
+        tpr = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        tnr = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+        
+        metrics = ThresholdMetrics(
+            false_positive_rate=fpr,
+            false_negative_rate=fnr,
+            true_positive_rate=tpr,
+            true_negative_rate=tnr,
+            sample_count=len(y_pred),
+            timestamp=datetime.now().timestamp()
         )
         
-        # Clamp to bounds
+        self.metrics_history.append(metrics)
+        if len(self.metrics_history) > 100:
+            self.metrics_history = self.metrics_history[-100:]
+        
+        return metrics
+    
+    def adapt_threshold(self, context: Optional[str] = None) -> float:
+        if context:
+            self.operational_context = context
+
+        # Get recent metrics
+        metrics = self.compute_recent_metrics()
+
+        if metrics.sample_count < 20:
+            self.drift_detected = False
+            return self.current_threshold
+
+        # -----------------------------
+        # ✅ DRIFT DETECTION (ADD HERE)
+        # -----------------------------
+        self.drift_detected = (
+            abs(metrics.false_positive_rate - self.target_fpr) > 0.1 or
+            abs(metrics.false_negative_rate - self.target_fnr) > 0.1
+        )
+
+        # Compute adjustments
+        fpr_error = metrics.false_positive_rate - self.target_fpr
+        fnr_error = metrics.false_negative_rate - self.target_fnr
+
+        if fpr_error > 0.01:
+            self.current_threshold *= (1 + self.adaptation_rate * fpr_error)
+
+        if fnr_error > 0.01:
+            self.current_threshold *= (1 - self.adaptation_rate * fnr_error)
+
+        if self.operational_context == "maintenance":
+            self.current_threshold *= 1.1
+        elif self.operational_context == "startup":
+            self.current_threshold *= 1.05
+
         self.current_threshold = np.clip(
             self.current_threshold,
             self.min_threshold,
             self.max_threshold
         )
+
+        return self.current_threshold
+
     
     def get_threshold(self) -> float:
-        """Get current adaptive threshold"""
+        """Get current threshold"""
         return self.current_threshold
     
-    def get_threshold_state(self) -> ThresholdState:
-        """Get current threshold state"""
-        return ThresholdState(
-            value=self.current_threshold,
-            adaptation_rate=self.adaptation_rate,
-            confidence=1.0 - min(self.drift_magnitude, 1.0),
-            last_update=len(self.threshold_history) - 1
-        )
+    def reset_to_base(self):
+        """Reset threshold to base value"""
+        self.current_threshold = self.base_threshold
+        self.recent_predictions = []
+        self.recent_ground_truth = []
+        self.metrics_history = []
     
-    def reset(self):
-        """Reset adaptive threshold"""
-        self.current_threshold = self.initial_threshold
-        self.threshold_history = [self.initial_threshold]
-        self.error_history.clear()
-        self.reconstruction_errors.clear()
-        self.drift_detected = False
-        self.drift_magnitude = 0.0
-
-
-class BehavioralDriftDetector:
-    """
-    Detects long-term behavioral drift in system
-    """
-    
-    def __init__(self, window_size: int = 1000):
-        """Initialize drift detector"""
-        self.window_size = window_size
-        self.behavior_history: deque = deque(maxlen=window_size)
-        self.drift_events: List[Dict] = []
+    def get_adaptation_status(self) -> Dict:
+        """Get current adaptation status"""
+        metrics = self.compute_recent_metrics()
         
-    def add_observation(self, feature_vector: np.ndarray, timestamp: float):
-        """
-        Add new observation for drift detection
-        
-        Args:
-            feature_vector: Feature vector at this time
-            timestamp: Observation timestamp
-        """
-        self.behavior_history.append({
-            'features': feature_vector,
-            'timestamp': timestamp
-        })
-        
-        # Check for drift
-        if len(self.behavior_history) >= self.window_size:
-            drift_detected = self._check_drift()
-            if drift_detected:
-                self.drift_events.append({
-                    'timestamp': timestamp,
-                    'magnitude': self._compute_drift_magnitude()
-                })
-    
-    def _check_drift(self) -> bool:
-        """Check if drift is detected"""
-        if len(self.behavior_history) < self.window_size:
-            return False
-        
-        # Compare first half to second half
-        mid_point = len(self.behavior_history) // 2
-        first_half = [obs['features'] for obs in 
-                     list(self.behavior_history)[:mid_point]]
-        second_half = [obs['features'] for obs in 
-                     list(self.behavior_history)[mid_point:]]
-        
-        first_mean = np.mean(first_half, axis=0)
-        second_mean = np.mean(second_half, axis=0)
-        
-        # Compute drift magnitude
-        drift = np.linalg.norm(second_mean - first_mean)
-        threshold = np.linalg.norm(first_mean) * 0.1  # 10% change
-        
-        return drift > threshold
-    
-    def _compute_drift_magnitude(self) -> float:
-        """Compute magnitude of detected drift"""
-        if len(self.behavior_history) < self.window_size:
-            return 0.0
-        
-        mid_point = len(self.behavior_history) // 2
-        first_half = [obs['features'] for obs in 
-                     list(self.behavior_history)[:mid_point]]
-        second_half = [obs['features'] for obs in 
-                     list(self.behavior_history)[mid_point:]]
-        
-        first_mean = np.mean(first_half, axis=0)
-        second_mean = np.mean(second_half, axis=0)
-        
-        drift = np.linalg.norm(second_mean - first_mean)
-        baseline = np.linalg.norm(first_mean)
-        
-        return drift / (baseline + 1e-10)
-    
-    def get_drift_summary(self) -> Dict:
-        """Get summary of drift events"""
         return {
-            'total_drift_events': len(self.drift_events),
-            'latest_drift': self.drift_events[-1] if self.drift_events else None,
-            'average_drift_magnitude': np.mean([e['magnitude'] for e in self.drift_events]) 
-                                      if self.drift_events else 0.0
+            'current_threshold': self.current_threshold,
+            'base_threshold': self.base_threshold,
+            'threshold_change_percent': ((self.current_threshold - self.base_threshold) / self.base_threshold) * 100,
+            'recent_fpr': metrics.false_positive_rate,
+            'recent_fnr': metrics.false_negative_rate,
+            'target_fpr': self.target_fpr,
+            'target_fnr': self.target_fnr,
+            'sample_count': metrics.sample_count,
+            'operational_context': self.operational_context,
+            'adaptation_active': metrics.sample_count >= 20,
+            'drift_detected': self.drift_detected
+        }
+
+    def get_threshold_state(self) -> Dict:
+        """
+        Get current threshold state (for dashboard / demo)
+        """
+        return {
+            "current_threshold": self.current_threshold,
+            "base_threshold": self.base_threshold,
+            "min_threshold": self.min_threshold,
+            "max_threshold": self.max_threshold,
+            "target_fpr": self.target_fpr,
+            "target_fnr": self.target_fnr,
+            "operational_context": self.operational_context,
+            "samples_seen": len(self.recent_predictions),
+            "adaptation_active": len(self.recent_predictions) >= 20
         }
 
 
 if __name__ == "__main__":
-    # Example usage
-    adaptive = AdaptiveThreshold(initial_threshold=0.15)
+    # Test adaptive thresholding
+    base_threshold = 0.15
+    adaptive = AdaptiveThreshold(
+        base_threshold=base_threshold,
+        target_fpr=0.05,
+        target_fnr=0.15
+    )
     
-    # Simulate error updates
-    for i in range(200):
-        error = 0.1 + np.random.randn() * 0.05
-        if i > 100:
-            error += 0.1  # Simulate drift
-        is_anomaly = error > adaptive.get_threshold()
-        adaptive.update(error, is_anomaly, float(i))
-        
-        if i % 20 == 0:
-            print(f"t={i}: Threshold={adaptive.get_threshold():.4f}, "
-                  f"Drift={adaptive.drift_detected}")
+    # Simulate high false positive rate
+    print("Simulating high FPR scenario...")
+    for i in range(50):
+        # Many false positives (predicted=True, actual=False)
+        adaptive.update_performance(True, False)
+    
+    adaptive.adapt_threshold()
+    status = adaptive.get_adaptation_status()
+    print(f"After high FPR: threshold={status['current_threshold']:.4f}, "
+          f"FPR={status['recent_fpr']:.4f}, change={status['threshold_change_percent']:.1f}%")
+    
+    # Reset and simulate high false negative rate
+    adaptive.reset_to_base()
+    print("\nSimulating high FNR scenario...")
+    for i in range(50):
+        # Many false negatives (predicted=False, actual=True)
+        adaptive.update_performance(False, True)
+    
+    adaptive.adapt_threshold()
+    status = adaptive.get_adaptation_status()
+    print(f"After high FNR: threshold={status['current_threshold']:.4f}, "
+          f"FNR={status['recent_fnr']:.4f}, change={status['threshold_change_percent']:.1f}%")

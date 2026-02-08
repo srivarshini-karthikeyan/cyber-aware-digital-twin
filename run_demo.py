@@ -139,7 +139,7 @@ def main():
     # Show adaptive threshold
     print("🎚️ Adaptive Threshold:")
     threshold_state = dashboard.adaptive_threshold.get_threshold_state()
-    print(f"   Current threshold: {threshold_state.value:.4f}")
+    print(f"   Current threshold: {threshold_state['current_threshold']:.4f}")
     print(f"   Drift detected: {dashboard.adaptive_threshold.drift_detected}")
     print()
     
