@@ -1,0 +1,132 @@
+# Configuration for GenAI-Powered Cyber-Aware Digital Twin
+
+# Subsystem Configuration
+subsystem:
+  name: "Raw Water Tank Level Control System"
+  components:
+    - tank
+    - inlet_valve
+    - outlet_pump
+    - level_sensor
+  
+  # Safety Thresholds
+  thresholds:
+    max_level: 800.0  # mm (overflow risk)
+    min_level: 100.0  # mm (dry run risk)
+    critical_overflow: 900.0
+    critical_dry: 50.0
+  
+  # Control Logic Parameters
+  control:
+    valve_flow_rate: 2.5  # mm/s when open
+    pump_flow_rate: 3.0   # mm/s when ON
+    sensor_noise_std: 5.0  # mm
+    update_frequency: 1.0  # Hz
+
+# Data Configuration
+data:
+  swat_dataset_path: "data/raw/"
+  processed_data_path: "data/processed/"
+  features:
+    - "LIT101"  # Tank level sensor
+    - "MV101"   # Inlet valve
+    - "P101"    # Outlet pump
+  time_window: 60  # seconds
+  train_split: 0.7
+  val_split: 0.15
+  test_split: 0.15
+
+# GenAI Model Configuration
+genai:
+  model_type: "lstm_autoencoder"  # Options: lstm_autoencoder, vae
+  sequence_length: 60
+  latent_dim: 32
+  hidden_dims: [64, 32, 16]
+  learning_rate: 0.001
+  batch_size: 32
+  epochs: 50
+  anomaly_threshold: 0.15  # Reconstruction error threshold
+  
+  # Attack Generation
+  attack_generation:
+    num_synthetic_attacks: 10
+    attack_types:
+      - sensor_spoofing
+      - slow_manipulation
+      - frozen_sensor
+      - delayed_response
+
+# Digital Twin Configuration
+digital_twin:
+  state_comparison:
+    divergence_threshold: 0.1  # 10% difference triggers alert
+    rate_of_change_threshold: 5.0  # mm/s
+  safety_check_interval: 1.0  # seconds
+  enable_cross_validation: true
+
+# Gap Analysis Configuration
+gap_analysis:
+  detection_delay_threshold: 5.0  # seconds
+  unsafe_state_severity_levels:
+    low: 0.1
+    medium: 0.3
+    high: 0.5
+    critical: 0.8
+  
+  gap_categories:
+    - single_sensor_dependency
+    - no_rate_validation
+    - absolute_threshold_only
+    - no_cross_sensor_check
+    - blind_controller_trust
+    - missing_sanity_check
+
+# Advanced Features
+advanced_features:
+  trust_degradation_index:
+    enabled: true
+    update_interval: 1.0
+    trust_levels:
+      green: 0.8
+      yellow: 0.5
+      red: 0.2
+  
+  attack_latency:
+    enabled: true
+    measurement_window: 60  # seconds
+  
+  silent_failure:
+    enabled: true
+    trend_analysis_window: 30  # seconds
+    degradation_rate_threshold: 0.01  # per second
+  
+  mitigation_simulation:
+    enabled: true
+    mitigation_types:
+      - redundant_sensor
+      - rate_validation
+      - digital_twin_check
+      - fail_safe_closure
+
+# Visualization
+visualization:
+  output_path: "outputs/plots/"
+  report_path: "outputs/reports/"
+  figure_format: "png"
+  dpi: 300
+  style: "whitegrid"
+  
+  plots:
+    - time_series_comparison
+    - state_divergence
+    - trust_degradation
+    - attack_timeline
+    - unsafe_state_heatmap
+    - gap_analysis_table
+
+# Dashboard
+dashboard:
+  port: 8050
+  host: "127.0.0.1"
+  debug: false
+  auto_reload: true
