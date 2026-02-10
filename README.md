@@ -16,12 +16,12 @@
 
 ## 📊 Dashboard Output
 
-![Dashboard 1](output/dashboard_output/img1.png)
-![Dashboard 2](output/dashboard_output/img2.png)
-![Dashboard 3](output/dashboard_output/img3.png)
-![Dashboard 4](output/dashboard_output/img4.png)
-![Dashboard 5](output/dashboard_output/img5.png)
-![Dashboard 6](output/dashboard_output/img6.png)
+![Dashboard 1](outputs/dashboard_output/img1.png)
+![Dashboard 2](outputs/dashboard_output/img2.png)
+![Dashboard 3](outputs/dashboard_output/img3.png)
+![Dashboard 4](outputs/dashboard_output/img4.png)
+![Dashboard 5](outputs/dashboard_output/img5.png)
+![Dashboard 6](outputs/dashboard_output/img6.png)
 
 ---
 
