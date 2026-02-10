@@ -12,7 +12,9 @@
 
 > *"A GenAI-powered cyber-aware digital twin that proactively uncovers hidden cybersecurity gaps in industrial control systems by simulating and explaining unsafe cyber-physical behaviors."*
 
+
 ---
+</div>
 
 ## 📊 Dashboard Output
 
@@ -24,8 +26,6 @@
 ![Dashboard 6](outputs/dashboard_output/img6.png)
 
 ---
-
-</div>
 
 ## 📋 Table of Contents
 
